@@ -5,6 +5,11 @@ from flask_sqlalchemy import SQLAlchemy
 from http import HTTPStatus
 from initialise import Initialise
 from flask import Flask
+from marshmallow import Schema, fields
+# import built-in validators
+from marshmallow.validate import Length, Range
+from flask import jsonify
+
 
 # Creates the Flask app
 app = Flask(__name__)
@@ -14,6 +19,31 @@ app = init.db(app)
 # Creates the db connection
 db = SQLAlchemy(app)
 
+class UserSchema(Schema):
+    # Required value shorter than 50 characters
+    name = fields.Str(required=True, validate=Length(max=50))
+    # Required value shorter than 50 characters
+    surname = fields.Str(required=True, validate=Length(max=50))
+    # Required value shorter than 12 characters
+    identity_number = fields.Int(required=True, validate=Range(min=1))
+    
+class IDSchema(Schema):
+    identity_number = fields.Int(required=True, validate=Range(min=1))
+    
+user_schema = UserSchema()
+def create(post_data):
+    sql = "insert into users (name, surname, identity_number) VALUES (:name, :surname, :identity_number)"
+    return execute(sql, post_data)
+
+def execute(sql, data):
+    result = db.engine.execute(
+        sql,
+        data
+    )
+    db.session.commit()
+    return result
+    
+    
 def hateoas(id):
     return [
                 {
@@ -37,6 +67,9 @@ def hateoas(id):
 def post_user_details():
     try:
         data = request.get_json()
+        errors = user_schema.validate(data)
+        if errors:
+            return json.dumps(str(errors)), HTTPStatus.BAD_REQUEST
         sql = text('INSERT INTO users (name, surname, identity_number) values (:name, :surname, :id_num)')
         result = db.engine.execute(
             sql,
@@ -48,11 +81,35 @@ def post_user_details():
     except Exception as e:
         return json.dumps('Failed. ' + str(e)), HTTPStatus.NOT_FOUND
 
+@app.route('/v1/users/injection', methods=['POST'])
+def get_user_details_injection():
+    data = request.get_json()
+    user_id = data['id']
+    try:
+        
+        sql = ('SELECT * FROM users WHERE id=' + user_id)
+        result = db.engine.execute(sql).fetchall()
+        response = []
+        for row in result:
+            name = row[0]  
+            surname = row[1] 
+            identity_number = row[2]  
+            user_data = {
+                "name": name,
+                "surname": surname,
+                "identity_number": identity_number,
+                "links": hateoas(user_id)  
+            }
+            response.append(user_data)
+        return jsonify(response), HTTPStatus.OK
+    except Exception as e:
+        return json.dumps('Failed. ' + str(e)), HTTPStatus.NOT_FOUND
+    
 @app.route('/v1/users/<user_id>', methods=['GET'])
 def get_user_details(user_id):
     try:
-        sql = text('SELECT * FROM users WHERE id=:id_num')
-        result = db.engine.execute(sql, id_num=user_id).fetchone()
+        sql = text('SELECT * FROM users WHERE id=:user_id')
+        result = db.engine.execute(sql, user_id = user_id).fetchone()
         return json.dumps({"name": result.name, "surname": result.surname, "identity_number": result.identity_number, "links": hateoas(user_id)}), HTTPStatus.OK
     except Exception as e:
         return json.dumps('Failed. ' + str(e)), HTTPStatus.NOT_FOUND
@@ -89,4 +146,21 @@ def patch_user_details(user_id):
         )
     except Exception as e:
         return json.dumps('Failed. ' + str(e)), HTTPStatus.NOT_FOUND
+    
 
+        
+    
+@app.route('/v1/user', methods=['POST'])
+def post_user_details_v1():
+    try:
+        data = request.get_json()
+        # Assuming user_schema is defined elsewhere for validation
+        # errors = user_schema.validate(data)
+        # if errors:
+        #     return json.dumps(str(errors)), HTTPStatus.BAD_REQUEST
+        sql = text('INSERT INTO users (name, surname, identity_number) values (:name, :surname, :id_num)')
+        result = db.engine.execute(sql, name=data['name'], surname=data['surname'], id_num=data['identity_number'])
+        return json.dumps('Added'), HTTPStatus.OK
+    except Exception as e:
+        return json.dumps('Failed to add record. ' + str(e)), HTTPStatus.NOT_FOUND
+    
