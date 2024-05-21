@@ -116,7 +116,6 @@ def get_events():
                 "event_name": row.event_name,
                 "img": row.img,
                 "description": row.description,
-                
                 "shortly": row.shortly,
                 "start_date": row.start_date.strftime('%Y-%m-%d %H:%M'),
                 "status": row.status,
